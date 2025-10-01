@@ -1,0 +1,85 @@
+Main.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List, Tuple
+from itertools import permutations
+
+app = FastAPI()
+
+class DominoHand(BaseModel):
+    hand: List[Tuple[int, int]]
+
+def is_five_of_a_kind(hand):
+    for v in range(7):
+        if sum(1 for d in hand if v in d) == 5:
+            return True
+    return False
+
+def is_five_doubles(hand):
+    return all(d[0] == d[1] for d in hand)
+
+def is_four_of_a_kind_and_double_blank(hand):
+    double_blank = (0, 0)
+    if double_blank not in hand:
+        return False
+    non_blank = [d for d in hand if d != double_blank]
+    for v in range(7):
+        if sum(1 for d in non_blank if v in d) == 4:
+            return True
+    return False
+
+def pip_sum(hand):
+    return sum(sum(d) for d in hand)
+
+def is_pip_sum_single_auto(hand):
+    s = pip_sum(hand)
+    return (11 <= s <= 15) or (45 <= s <= 49)
+
+def is_pip_sum_double_auto(hand):
+    s = pip_sum(hand)
+    return (s <= 10) or (s >= 50)
+
+def is_strict_consecutive(seq):
+    seq_sorted = sorted(seq)
+    return all(seq_sorted[i+1] - seq_sorted[i] == 1 for i in range(4))
+
+def is_in_order(hand):
+    for perm in permutations(hand):
+        for o in range(32):  # 2^5 orientations
+            seq = []
+            for i in range(5):
+                d = perm[i]
+                if (o >> i) & 1:
+                    seq.append(d[1])
+                else:
+                    seq.append(d[0])
+            if len(set(seq)) == 5:
+                if all(seq[i+1] > seq[i] for i in range(4)) or all(seq[i+1] < seq[i] for i in range(4)):
+                    return True, is_strict_consecutive(seq)
+    return False, False
+
+def detect_automatics(hand):
+    results = []
+    if is_five_of_a_kind(hand):
+        results.append({"name": "Five of a Kind", "points": 6})
+    if is_five_doubles(hand):
+        results.append({"name": "Five Doubles", "points": 6})
+    if is_four_of_a_kind_and_double_blank(hand):
+        results.append({"name": "Four of a Kind and Double Blank", "points": 6})
+    if is_pip_sum_single_auto(hand):
+        results.append({"name": "Pip Sum Single Automatic (11-15 or 45-49)", "points": 6})
+    if is_pip_sum_double_auto(hand):
+        results.append({"name": "Pip Sum Double Automatic (<=10 or >=50)", "points": 12})
+    in_order, is_consecutive = is_in_order(hand)
+    if in_order:
+        if is_consecutive:
+            results.append({"name": "In Strict Consecutive Order (Double Automatic)", "points": 12})
+        else:
+            results.append({"name": "In Order (Single Automatic)", "points": 6})
+    return results
+
+@app.post("/detect_automatics")
+def detect_automatics_api(domino_hand: DominoHand):
+    hand = [tuple(d) for d in domino_hand.hand]
+    results = detect_automatics(hand)
+    return {"automatics": results}
